@@ -1,0 +1,10 @@
+spacy==3.8.16  # NLP pipelines for tokenization, tagging, and linguistic analysis
+nltk==3.10.4  # Text preprocessing, tokenization, and language utilities
+transformers==5.20.2  # Pretrained transformer models for jargon interpretation
+torch==2.14.1  # Tensor and deep-learning backend for transformer inference
+wordfreq==3.1.1  # Word-frequency data for identifying uncommon terminology
+pydantic==2.14.1  # Data models and request/response validation
+fastapi==0.159.1  # HTTP API framework for serving the NLP functionality
+uvicorn==0.54.0  # ASGI server for running the FastAPI application
+streamlit==1.66.1  # Interactive web interface for the Jargon Buster
+pytest==9.1.1  # Automated test runner
