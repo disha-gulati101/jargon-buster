@@ -149,6 +149,17 @@ def test_scorer_gives_rare_compound_a_high_score():
     assert scorer.score("xenobiotechnology") > 0.65
 
 
+@pytest.mark.parametrize("term", ["outputs", "documentation"])
+def test_common_general_terms_require_a_lower_threshold(term):
+    from src.scorer import JargonScorer
+
+    scorer = JargonScorer()
+
+    assert scorer.score(term, domain="general") <= 0.4
+    assert scorer.filter_jargon([term], threshold=0.65, domain="general") == []
+    assert len(scorer.filter_jargon([term], threshold=0.3, domain="general")) == 1
+
+
 def test_domain_glossary_boosts_matching_terms_and_filters_by_domain():
     from src.scorer import JargonScorer
 
@@ -191,6 +202,79 @@ def test_simplifier_offline_fallback_returns_definition_and_replacement():
     assert result.plain_definition
     assert result.suggested_replacement
     assert len(result.plain_definition.split()) < 20
+
+
+def test_simplifier_preserves_unknown_term_without_generic_fallback(monkeypatch):
+    import src.simplifier as module
+
+    monkeypatch.setattr(module, "_wordnet", None)
+    simplifier = module.JargonSimplifier()
+    simplifier._model_unavailable = True
+    result = simplifier.simplify_candidate("quuxification", "")
+
+    assert result.plain_definition == "quuxification"
+    assert result.suggested_replacement == "quuxification"
+    assert "simpler explanation" not in result.plain_definition.casefold()
+    assert "simpler explanation" not in result.suggested_replacement.casefold()
+
+
+def test_simplifier_ignores_generic_model_replacement(monkeypatch):
+    import src.simplifier as module
+
+    monkeypatch.setattr(module, "_torch", object())
+    monkeypatch.setattr(
+        module,
+        "_pipeline",
+        lambda *args, **kwargs: lambda prompt, **options: [
+            {
+                "generated_text": (
+                    "Definition: A specialized idea. "
+                    "Replacement: simpler explanation"
+                )
+            }
+        ],
+    )
+    monkeypatch.setattr(module, "_wordnet", None)
+    simplifier = module.JargonSimplifier()
+    result = simplifier.simplify_candidate("quuxification", "")
+
+    assert result.plain_definition == "quuxification"
+    assert result.suggested_replacement == "quuxification"
+
+
+def test_pipeline_does_not_repeat_fallback_label_when_replacing_terms():
+    from src.pipeline import JargonBusterPipeline
+
+    class Extractor:
+        def extract(self, text):
+            return [
+                Candidate("quuxification", match.start(), match.end())
+                for match in re.finditer("quuxification", text)
+            ]
+
+    class Scorer:
+        def filter_jargon(self, candidates, threshold, domain):
+            return [
+                types.SimpleNamespace(
+                    text=candidate.text,
+                    start_char=candidate.start_char,
+                    end_char=candidate.end_char,
+                    score=0.9,
+                )
+                for candidate in candidates
+            ]
+
+    class Simplifier:
+        def simplify(self, term, context, domain):
+            return types.SimpleNamespace(
+                plain_definition=term,
+                suggested_replacement=term,
+            )
+
+    text = "quuxification uses quuxification"
+    result = JargonBusterPipeline(Extractor(), Scorer(), Simplifier()).analyze(text)
+
+    assert result.simplified_text == text
 
 
 def test_simplifier_model_mode_returns_definition_and_replacement(monkeypatch):

@@ -3,9 +3,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 try:
-    from .domains import glossary_entry, normalize_domain
+    from .domains import glossary_entry, is_common_general_term, normalize_domain
 except ImportError:
-    from domains import glossary_entry, normalize_domain
+    from domains import glossary_entry, is_common_general_term, normalize_domain
 
 try:
     from wordfreq import zipf_frequency as _zipf_frequency
@@ -71,8 +71,11 @@ class JargonScorer:
         )
         if _ACRONYM_PATTERN.fullmatch(normalized):
             result = max(result + 0.35, 0.85)
-        if glossary_entry(normalized, domain) is not None:
+        has_glossary_entry = glossary_entry(normalized, domain) is not None
+        if has_glossary_entry:
             result = min(result + 0.25, 1.0)
+        elif domain == "general" and is_common_general_term(normalized):
+            result = min(result, 0.4)
         return round(_clamp(result), 4)
 
     def filter_jargon(

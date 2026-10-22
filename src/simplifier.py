@@ -97,7 +97,7 @@ class JargonSimplifier:
         else:
             result = self._generate_definition(normalized_term, context)
         if result is None:
-            result = self._fallback_definition(normalized_term, context)
+            result = self._fallback_definition(normalized_term, context, domain)
         self._cache[key] = result
         self._cache.move_to_end(key)
         if len(self._cache) > self.cache_size:
@@ -160,10 +160,20 @@ class JargonSimplifier:
         )
         if not definition or not replacement:
             return None
+        if replacement.casefold().strip() in {
+            "simpler explanation",
+            "plain language explanation",
+            "an explanation",
+        }:
+            return None
+        if replacement.casefold().strip() == term.casefold():
+            return None
         return SimplificationResult(term, definition, replacement)
 
-    def _fallback_definition(self, term: str, context: str) -> SimplificationResult:
-        known = _KNOWN_TERMS.get(term.casefold())
+    def _fallback_definition(
+        self, term: str, context: str, domain: str = "general"
+    ) -> SimplificationResult:
+        known = _KNOWN_TERMS.get(term.casefold()) if domain == "general" else None
         if known is not None:
             return SimplificationResult(term, known[0], known[1])
 
@@ -183,12 +193,7 @@ class JargonSimplifier:
                 wordnet_result[1],
             )
 
-        short_term = _limit_words(term, 12)
-        return SimplificationResult(
-            term,
-            f"A specialized idea or method called {short_term}.",
-            _fallback_replacement(term),
-        )
+        return SimplificationResult(term, term, term)
 
 
 def _definition_from_context(term: str, context: str) -> str | None:
@@ -218,14 +223,14 @@ def _definition_from_wordnet(term: str) -> tuple[str, str] | None:
             for lemma in synset.lemmas()
             if lemma.name().casefold() != lookup.casefold()
         ]
-        replacement = lemmas[0] if lemmas else _fallback_replacement(term)
+        replacement = lemmas[0] if lemmas else term
         if definition:
             return definition, replacement
     return None
 
 
 def _fallback_replacement(term: str) -> str:
-    return "simpler explanation"
+    return term
 
 
 def _limit_words(text: str, limit: int = 19) -> str:

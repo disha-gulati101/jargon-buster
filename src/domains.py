@@ -102,6 +102,10 @@ DOMAIN_LABELS = {
     "finance": "Finance",
 }
 
+GENERAL_COMMON_TERMS = frozenset(
+    {"document", "documentation", "input", "output", "outputs"}
+)
+
 
 def normalize_domain(domain: str) -> str:
     if not isinstance(domain, str):
@@ -119,3 +123,8 @@ def glossary_entry(term: str, domain: str = "general") -> dict[str, str] | None:
     glossary = DOMAIN_GLOSSARIES[normalize_domain(domain)]
     normalized_term = " ".join(term.casefold().split())
     return glossary.get(normalized_term)
+
+
+def is_common_general_term(term: str) -> bool:
+    normalized_term = " ".join(term.casefold().split())
+    return normalized_term in GENERAL_COMMON_TERMS

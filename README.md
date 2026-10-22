@@ -5,7 +5,7 @@
 [![spaCy](https://img.shields.io/badge/NLP-spaCy-09A3D5.svg)](https://spacy.io/)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-Not%20specified-lightgrey.svg)](#license)
-[![Tests](https://img.shields.io/badge/Tests-39%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-44%20passing-brightgreen.svg)](#testing)
 
 Jargon Buster identifies specialized terms in technical, medical, legal, and
 financial writing, explains them in plain English, and lets readers replace
