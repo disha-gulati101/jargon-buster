@@ -71,7 +71,7 @@ class JargonBusterPipeline:
         self.evaluator = SimplificationEvaluator()
 
     def analyze(
-        self, text: str, threshold: float = 0.65, domain: str = "general"
+        self, text: str, threshold: float = 0.5, domain: str = "general"
     ) -> JargonBusterResult:
         if not isinstance(text, str):
             raise TypeError("text must be a string")
@@ -80,14 +80,9 @@ class JargonBusterPipeline:
         domain = normalize_domain(domain)
 
         candidates = self.extractor.extract(text)
-        if domain == "general":
-            scored_candidates = self.scorer.filter_jargon(
-                candidates, threshold=threshold
-            )
-        else:
-            scored_candidates = self.scorer.filter_jargon(
-                candidates, threshold=threshold, domain=domain
-            )
+        scored_candidates = self.scorer.filter_jargon(
+            candidates, threshold=threshold, domain=domain
+        )
         jargon_terms = []
         for candidate in scored_candidates:
             start = candidate.start_char
@@ -96,14 +91,17 @@ class JargonBusterPipeline:
                 raise ValueError("candidate span is outside the input text")
 
             context = _sentence_context(text, start, end)
-            if domain == "general":
-                simplified = self.simplifier.simplify_candidate(
-                    candidate.text, context
-                )
+            simplify = getattr(self.simplifier, "simplify", None)
+            if callable(simplify):
+                simplified = simplify(candidate.text, context, domain=domain)
             else:
-                simplified = self.simplifier.simplify_candidate(
-                    candidate.text, context, domain=domain
-                )
+                simplify_candidate = self.simplifier.simplify_candidate
+                if domain == "general":
+                    simplified = simplify_candidate(candidate.text, context)
+                else:
+                    simplified = simplify_candidate(
+                        candidate.text, context, domain=domain
+                    )
             jargon_terms.append(
                 JargonItem(
                     term=candidate.text,

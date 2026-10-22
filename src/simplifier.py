@@ -104,6 +104,11 @@ class JargonSimplifier:
             self._cache.popitem(last=False)
         return result
 
+    def simplify(
+        self, term: str, context: str, domain: str = "general"
+    ) -> SimplificationResult:
+        return self.simplify_candidate(term, context, domain=domain)
+
     def _generate_definition(
         self, term: str, context: str
     ) -> SimplificationResult | None:

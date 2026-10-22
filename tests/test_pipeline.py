@@ -301,6 +301,44 @@ def test_pipeline_handles_text_with_zero_jargon():
     assert result.reading_level_score > 0.0
 
 
+def test_pipeline_forwards_domain_to_scorer_and_simplifier():
+    from src.pipeline import JargonBusterPipeline
+
+    calls = {}
+
+    class Extractor:
+        def extract(self, text):
+            return [Candidate("hypertension", 0, len("hypertension"))]
+
+    class Scorer:
+        def filter_jargon(self, candidates, threshold, domain):
+            calls["scorer_domain"] = domain
+            return [
+                types.SimpleNamespace(
+                    text="hypertension",
+                    start_char=0,
+                    end_char=len("hypertension"),
+                    score=0.9,
+                )
+            ]
+
+    class Simplifier:
+        def simplify(self, term, context, domain):
+            calls["simplifier_domain"] = domain
+            return types.SimpleNamespace(
+                plain_definition="High blood pressure.",
+                suggested_replacement="high blood pressure",
+            )
+
+    result = JargonBusterPipeline(Extractor(), Scorer(), Simplifier()).analyze(
+        "hypertension", domain="medical"
+    )
+
+    assert calls == {"scorer_domain": "medical", "simplifier_domain": "medical"}
+    assert result.jargon_terms[0].domain == "medical"
+    assert result.simplified_text == "high blood pressure"
+
+
 def test_pipeline_handles_text_longer_than_2000_characters(pipeline_components):
     text = "Ordinary explanatory text. " * 100
     result = pipeline_components.analyze(text)
