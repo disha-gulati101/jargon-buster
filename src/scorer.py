@@ -3,6 +3,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 try:
+    from .domains import glossary_entry, normalize_domain
+except ImportError:
+    from domains import glossary_entry, normalize_domain
+
+try:
     from wordfreq import zipf_frequency as _zipf_frequency
 except ImportError:
     _COMMON_WORDS = {
@@ -41,8 +46,9 @@ class ScoredCandidate:
 
 
 class JargonScorer:
-    def score(self, term: str) -> float:
+    def score(self, term: str, domain: str = "general") -> float:
         """Return a normalized jargon-likelihood score for a term."""
+        domain = normalize_domain(domain)
         normalized = term.strip()
         if not normalized:
             return 0.0
@@ -65,18 +71,24 @@ class JargonScorer:
         )
         if _ACRONYM_PATTERN.fullmatch(normalized):
             result = max(result + 0.35, 0.85)
+        if glossary_entry(normalized, domain) is not None:
+            result = min(result + 0.25, 1.0)
         return round(_clamp(result), 4)
 
     def filter_jargon(
-        self, candidates: Iterable[object], threshold: float = 0.65
+        self,
+        candidates: Iterable[object],
+        threshold: float = 0.65,
+        domain: str = "general",
     ) -> list[ScoredCandidate]:
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("threshold must be between 0.0 and 1.0")
+        domain = normalize_domain(domain)
 
         jargon = []
         for candidate in candidates:
             text, start_char, end_char = _candidate_fields(candidate)
-            calculated_score = self.score(text)
+            calculated_score = self.score(text, domain=domain)
             if calculated_score >= threshold:
                 jargon.append(
                     ScoredCandidate(

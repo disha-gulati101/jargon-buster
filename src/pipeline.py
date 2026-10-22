@@ -1,6 +1,13 @@
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
+try:
+    from .domains import normalize_domain
+    from .evaluator import EvaluationReport, SimplificationEvaluator
+except ImportError:
+    from domains import normalize_domain
+    from evaluator import EvaluationReport, SimplificationEvaluator
 
 if TYPE_CHECKING:
     from .extractor import JargonExtractor
@@ -16,6 +23,7 @@ class JargonItem:
     end: int
     plain_definition: str
     replacement_suggestion: str
+    domain: str = "general"
 
 
 @dataclass(frozen=True)
@@ -25,6 +33,8 @@ class JargonBusterResult:
     reading_level_score: float
     jargon_terms: list[JargonItem]
     simplified_text: str
+    evaluation: Optional[EvaluationReport] = None
+    domain: str = "general"
 
 
 _WORD_PATTERN = re.compile(r"\b[\w'-]+\b")
@@ -58,19 +68,26 @@ class JargonBusterPipeline:
         self.extractor = extractor
         self.scorer = scorer
         self.simplifier = simplifier
+        self.evaluator = SimplificationEvaluator()
 
     def analyze(
-        self, text: str, threshold: float = 0.65
+        self, text: str, threshold: float = 0.65, domain: str = "general"
     ) -> JargonBusterResult:
         if not isinstance(text, str):
             raise TypeError("text must be a string")
         if not 0.0 <= threshold <= 1.0:
             raise ValueError("threshold must be between 0.0 and 1.0")
+        domain = normalize_domain(domain)
 
         candidates = self.extractor.extract(text)
-        scored_candidates = self.scorer.filter_jargon(
-            candidates, threshold=threshold
-        )
+        if domain == "general":
+            scored_candidates = self.scorer.filter_jargon(
+                candidates, threshold=threshold
+            )
+        else:
+            scored_candidates = self.scorer.filter_jargon(
+                candidates, threshold=threshold, domain=domain
+            )
         jargon_terms = []
         for candidate in scored_candidates:
             start = candidate.start_char
@@ -78,9 +95,15 @@ class JargonBusterPipeline:
             if start < 0 or end < start or end > len(text):
                 raise ValueError("candidate span is outside the input text")
 
-            simplified = self.simplifier.simplify_candidate(
-                candidate.text, _sentence_context(text, start, end)
-            )
+            context = _sentence_context(text, start, end)
+            if domain == "general":
+                simplified = self.simplifier.simplify_candidate(
+                    candidate.text, context
+                )
+            else:
+                simplified = self.simplifier.simplify_candidate(
+                    candidate.text, context, domain=domain
+                )
             jargon_terms.append(
                 JargonItem(
                     term=candidate.text,
@@ -89,16 +112,20 @@ class JargonBusterPipeline:
                     end=end,
                     plain_definition=simplified.plain_definition,
                     replacement_suggestion=simplified.suggested_replacement,
+                    domain=domain,
                 )
             )
 
         simplified_text = _replace_non_overlapping(text, jargon_terms)
+        evaluation = self.evaluator.evaluate(text, simplified_text)
         return JargonBusterResult(
             original_text=text,
             jargon_count=len(jargon_terms),
             reading_level_score=_reading_ease(simplified_text),
             jargon_terms=jargon_terms,
             simplified_text=simplified_text,
+            evaluation=evaluation,
+            domain=domain,
         )
 
 

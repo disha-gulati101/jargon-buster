@@ -3,6 +3,11 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 try:
+    from .domains import glossary_entry, normalize_domain
+except ImportError:
+    from domains import glossary_entry, normalize_domain
+
+try:
     import torch as _torch
 except (ImportError, OSError, RuntimeError):
     _torch = None
@@ -62,24 +67,35 @@ class JargonSimplifier:
             raise ValueError("cache_size must be at least 1")
         self.model_name = model_name
         self.cache_size = cache_size
-        self._cache: OrderedDict[tuple[str, str], SimplificationResult] = OrderedDict()
+        self._cache: OrderedDict[
+            tuple[str, str, str], SimplificationResult
+        ] = OrderedDict()
         self._generator = None
         self._model_unavailable = _torch is None or _pipeline is None
 
-    def simplify_candidate(self, term: str, context: str) -> SimplificationResult:
+    def simplify_candidate(
+        self, term: str, context: str, domain: str = "general"
+    ) -> SimplificationResult:
         if not isinstance(term, str) or not term.strip():
             raise ValueError("term must be a non-empty string")
         if not isinstance(context, str):
             raise TypeError("context must be a string")
 
+        domain = normalize_domain(domain)
         normalized_term = term.strip()
-        key = (normalized_term.casefold(), context.strip().casefold())
+        key = (domain, normalized_term.casefold(), context.strip().casefold())
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
             return cached
 
-        result = self._generate_definition(normalized_term, context)
+        entry = glossary_entry(normalized_term, domain)
+        if entry is not None:
+            result = SimplificationResult(
+                normalized_term, entry["definition"], entry["replacement"]
+            )
+        else:
+            result = self._generate_definition(normalized_term, context)
         if result is None:
             result = self._fallback_definition(normalized_term, context)
         self._cache[key] = result

@@ -6,14 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 try:
+    from .domains import normalize_domain
     from .pipeline import JargonBusterPipeline, JargonBusterResult
 except ImportError:
+    from domains import normalize_domain
     from pipeline import JargonBusterPipeline, JargonBusterResult
 
 
 class AnalyzeRequest(BaseModel):
     text: str = Field(max_length=10_000)
     threshold: float = 0.65
+    domain: str = "general"
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,9 @@ class _MockPipelineResult:
 
 
 class _MockPipeline:
-    def analyze(self, text: str, threshold: float = 0.65) -> _MockPipelineResult:
+    def analyze(
+        self, text: str, threshold: float = 0.65, domain: str = "general"
+    ) -> _MockPipelineResult:
         return _MockPipelineResult(
             original_text=text,
             jargon_count=0,
@@ -65,8 +70,12 @@ def create_app(pipeline: Any | None = None) -> FastAPI:
                 status_code=400,
                 detail="threshold must be between 0.0 and 1.0",
             )
+        try:
+            domain = normalize_domain(request.domain)
+        except (TypeError, ValueError) as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
         result = application.state.pipeline.analyze(
-            request.text, threshold=request.threshold
+            request.text, threshold=request.threshold, domain=domain
         )
         if isinstance(result, JargonBusterResult):
             return asdict(result)

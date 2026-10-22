@@ -149,6 +149,38 @@ def test_scorer_gives_rare_compound_a_high_score():
     assert scorer.score("xenobiotechnology") > 0.65
 
 
+def test_domain_glossary_boosts_matching_terms_and_filters_by_domain():
+    from src.scorer import JargonScorer
+
+    scorer = JargonScorer()
+    baseline = scorer.score("hypertension")
+    medical_score = scorer.score("hypertension", domain="medical")
+
+    assert medical_score == min(round(baseline + 0.25, 4), 1.0)
+    assert medical_score > baseline
+    assert scorer.score("hypertension", domain="general") == baseline
+
+
+def test_simplifier_prefers_selected_domain_glossary(monkeypatch):
+    import src.simplifier as module
+
+    monkeypatch.setattr(
+        module,
+        "_pipeline",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("glossary entries should bypass model inference")
+        ),
+    )
+    result = module.JargonSimplifier().simplify_candidate(
+        "hypertension", "The patient has hypertension.", domain="medical"
+    )
+
+    assert result.plain_definition == (
+        "Blood pressure that stays higher than is healthy."
+    )
+    assert result.suggested_replacement == "high blood pressure"
+
+
 def test_simplifier_offline_fallback_returns_definition_and_replacement():
     from src.simplifier import JargonSimplifier
 
@@ -180,7 +212,7 @@ def test_simplifier_model_mode_returns_definition_and_replacement(monkeypatch):
     monkeypatch.setattr(module, "_torch", object())
     monkeypatch.setattr(module, "_pipeline", fake_pipeline)
     result = module.JargonSimplifier().simplify_candidate(
-        "RAG", "RAG retrieves relevant documents."
+        "retriever", "A retriever finds relevant documents."
     )
 
     assert result.plain_definition == "A system that finds relevant documents"
@@ -209,8 +241,12 @@ def test_simplifier_caches_resolved_definitions(monkeypatch):
     monkeypatch.setattr(module, "_torch", object())
     monkeypatch.setattr(module, "_pipeline", fake_pipeline)
     simplifier = module.JargonSimplifier()
-    first = simplifier.simplify_candidate("RAG", "RAG retrieves data.")
-    second = simplifier.simplify_candidate("RAG", "RAG retrieves data.")
+    first = simplifier.simplify_candidate(
+        "retriever", "A retriever retrieves data."
+    )
+    second = simplifier.simplify_candidate(
+        "retriever", "A retriever retrieves data."
+    )
 
     assert first is second
     assert len(calls) == 1
@@ -227,6 +263,9 @@ def test_pipeline_replaces_overlapping_spans_without_corruption(pipeline_compone
         "with an software interface."
     )
     assert 0.0 <= result.reading_level_score <= 100.0
+    assert result.evaluation is not None
+    assert result.evaluation.original_flesch_score >= 0.0
+    assert result.evaluation.simplified_flesch_score == result.reading_level_score
     assert all(item.plain_definition for item in result.jargon_terms)
 
 
@@ -296,6 +335,48 @@ def test_api_analyze_endpoint_accepts_valid_payload(pipeline_components):
     assert response.status_code == 200
     assert response.json()["jargon_count"] == 2
     assert response.json()["jargon_terms"][0]["term"] == "GPU"
+    assert response.json()["evaluation"]["original_flesch_score"] >= 0.0
+    assert "flesch_delta" in response.json()["evaluation"]
+    assert response.json()["jargon_terms"][0]["domain"] == "general"
+
+
+def test_api_accepts_domain_and_returns_domain_matched_jargon():
+    from src.api import create_app
+    from src.pipeline import JargonBusterPipeline
+    from src.scorer import JargonScorer
+    from src.simplifier import JargonSimplifier
+
+    class MedicalExtractor:
+        def extract(self, text):
+            start = text.index("hypertension")
+            return [Candidate("hypertension", start, start + len("hypertension"))]
+
+    client = TestClient(
+        create_app(
+            JargonBusterPipeline(
+                MedicalExtractor(), JargonScorer(), JargonSimplifier()
+            )
+        )
+    )
+    response = client.post(
+        "/api/v1/analyze",
+        json={"text": "hypertension", "domain": "medical"},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["jargon_terms"][0]
+    assert item["domain"] == "medical"
+    assert item["replacement_suggestion"] == "high blood pressure"
+
+
+def test_api_rejects_unknown_domain():
+    from src.api import create_app
+
+    response = TestClient(create_app()).post(
+        "/api/v1/analyze", json={"text": "some text", "domain": "unknown"}
+    )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.parametrize(
